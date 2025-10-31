@@ -1,11 +1,19 @@
 package com.citamed.api.auth.dtos;
 
-public record RegisterRequest(
-        String dni,
-        String nombres,
-        String apellidos,
-        String email,
-        String password,
-        String telefono
-) {
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+public class RegisterRequest {
+    private String dni;
+    private String nombres;
+    private String apellidos;
+    private String email;
+    private String password;
+    private String telefono;
 }

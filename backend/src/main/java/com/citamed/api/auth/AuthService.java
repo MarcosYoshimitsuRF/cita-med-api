@@ -9,20 +9,13 @@ import com.citamed.api.domain.user.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Servicio que centraliza la lógica de negocio de autenticación.
- * Cumple con los Puntos 1.7.4, 1.7.5 y 1.7.6 del roadmap.
- */
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
-    // Inyección de todas las dependencias necesarias
     private final UsuarioRepository usuarioRepository;
     private final PacienteRepository pacienteRepository;
     private final PasswordEncoder passwordEncoder;
@@ -30,52 +23,55 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
 
     /**
-     * Lógica de Negocio para el Login (Punto 1.7.5)
+     * Punto 1.7.5: Lógica de Login
      */
     public AuthResponse login(LoginRequest request) {
-        // 1. Autenticar usando el manager de Spring
-        // Esto valida el email y password usando nuestro UserDetailsService
-        // y PasswordEncoder
+        // 1. Spring AuthenticationManager valida email y password
+        // (Usa internamente UserDetailsService y PasswordEncoder)
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
-                        request.email(),
-                        request.password()
+                        request.getEmail(),
+                        request.getPassword()
                 )
         );
 
-        // 2. Si la autenticación fue exitosa, buscar al usuario (UserDetails)
-        // Usamos el SP de login para asegurarnos de que es el usuario correcto
-        UserDetails user = usuarioRepository.findByEmailParaLogin(request.email())
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado después de autenticación")); // Inesperado
+        // 2. Si la autenticación es exitosa, buscamos al usuario
+        // Usamos findByEmail (el SP) para obtener el objeto Usuario completo
+        var usuario = usuarioRepository.findByEmailParaLogin(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado después de autenticación"));
 
-        // 3. Generar y devolver el token
-        String token = jwtService.generateToken(user);
-        return new AuthResponse(token);
+        // 3. Generamos el token JWT
+        var jwtToken = jwtService.generateToken(usuario);
+
+        // 4. Devolvemos el token
+        return AuthResponse.builder().token(jwtToken).build();
     }
 
     /**
-     * Lógica de Negocio para el Registro (Punto 1.7.6)
+     * Punto 1.7.6: Lógica de Registro
      */
-    @Transactional // Asegura que la operación sea atómica
     public void register(RegisterRequest request) {
-        // 1. Validar email duplicado
-        if (usuarioRepository.findByEmail(request.email()).isPresent()) {
-            // Idealmente, se lanzaría una excepción personalizada
-            throw new IllegalStateException("El correo electrónico ya está en uso");
+        // 1. Validar si el email ya existe
+        if (usuarioRepository.findByEmail(request.getEmail()).isPresent()) {
+            // No usamos una excepción custom por simplicidad,
+            // pero en producción se usaría una excepción de negocio.
+            throw new IllegalArgumentException("El email ya está registrado");
         }
 
         // 2. Hashear la contraseña
-        String hashedPassword = passwordEncoder.encode(request.password());
+        String passwordHashed = passwordEncoder.encode(request.getPassword());
 
-        // 3. Llamar al Procedimiento Almacenado de registro
-        // (El SP maneja la transacción de 'Usuarios' y 'Pacientes')
+        // 3. Llamar al SP sp_RegistrarPaciente
+        // El SP maneja la transacción de insertar en Usuarios y Pacientes
         pacienteRepository.registrarPaciente(
-                request.email(),
-                hashedPassword,
-                request.dni(),
-                request.nombres(),
-                request.apellidos(),
-                request.telefono()
+                request.getEmail(),
+                passwordHashed,
+                request.getDni(),
+                request.getNombres(),
+                request.getApellidos(),
+                request.getTelefono()
         );
+
+        // 4. No devolvemos nada (HTTP 200 OK implícito)
     }
 }

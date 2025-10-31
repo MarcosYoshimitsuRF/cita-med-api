@@ -1,9 +1,8 @@
 package com.citamed.api.domain.user;
 
 /**
- * Define los roles de usuario permitidos en el sistema.
- * * Este Enum se mapeará a la columna 'rol' ENUM('ADMIN','PACIENTE')
- * de la tabla 'Usuarios' en la base de datos.
+ * Punto 1.3.1: Define los roles de la aplicación.
+ * Coincide con el ENUM('ADMIN','PACIENTE') de la BD.
  */
 public enum Rol {
     ADMIN,

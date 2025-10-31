@@ -3,128 +3,112 @@ package com.citamed.api.config;
 import com.citamed.api.domain.user.Usuario;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
 /**
- * Servicio para manejar la lógica de JSON Web Tokens (JWT).
- * Cumple con el Paso 1.5 (Puntos 1.5.1 al 1.5.5).
- * Responsable de la creación y validación de tokens.
+ * Puntos 1.5.1 a 1.5.5
+ * Servicio para manejar la creación, validación y extracción de JWTs.
  */
 @Service
 public class JwtService {
 
-    // 1. Inyección de la clave secreta (Punto 1.5.5)
-    @Value("${app.jwt.secret}")
-    private String JWT_SECRET;
+    // Punto 1.5.5: Inyecta la clave secreta desde application.properties
+    @Value("${jwt.secret.key}")
+    private String jwtSecret;
 
-    // 2. Tiempo de expiración del token (ej. 24 horas)
-    private static final long JWT_EXPIRATION = 1000 * 60 * 60 * 24;
+    // Define el tiempo de expiración del token (ej. 24 horas)
+    private static final long JWT_EXPIRATION_TIME = 1000 * 60 * 60 * 24;
 
     /**
-     * Extrae el 'username' (email) del token.
-     * Cumple con el Punto 1.5.4.
+     * Punto 1.5.4: Extrae el username (email) del token.
      */
     public String getUsernameFromToken(String token) {
-        return getClaim(token, Claims::getSubject);
+        return extractClaim(token, Claims::getSubject);
     }
 
     /**
-     * Valida si un token es correcto y corresponde al usuario.
-     * Cumple con el Punto 1.5.3.
-     */
-    public boolean validateToken(String token, UserDetails userDetails) {
-        final String username = getUsernameFromToken(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
-    }
-
-    /**
-     * Genera un nuevo token para un usuario.
-     * Cumple con el Punto 1.5.2.
+     * Punto 1.5.2: Genera un token para un UserDetails (Usuario).
      */
     public String generateToken(UserDetails userDetails) {
-        // Debemos castear UserDetails a nuestra entidad 'Usuario'
-        // para acceder a los campos personalizados 'idUsuario' y 'rol'.
+        // Hacemos cast a nuestra entidad Usuario para acceder a campos custom
         Usuario usuario = (Usuario) userDetails;
 
+        // Creamos los "claims" (datos) personalizados
         Map<String, Object> extraClaims = new HashMap<>();
-        extraClaims.put("rol", usuario.getRol().name());
         extraClaims.put("id_usuario", usuario.getIdUsuario());
+        extraClaims.put("rol", usuario.getRol().name());
+        extraClaims.put("full_name", usuario.getPaciente() != null ?
+                usuario.getPaciente().getNombres() + " " + usuario.getPaciente().getApellidos() :
+                "Administrador");
 
-        return buildToken(extraClaims, userDetails, JWT_EXPIRATION);
+        return buildToken(extraClaims, userDetails, JWT_EXPIRATION_TIME);
     }
 
+    /**
+     * Punto 1.5.3: Valida el token contra el UserDetails.
+     */
+    public boolean isTokenValid(String token, UserDetails userDetails) {
+        final String username = getUsernameFromToken(token);
+        return (username.equals(userDetails.getUsername())) && !isTokenExpired(token);
+    }
 
-    // --- Métodos privados de utilidad ---
+    // --- Métodos Helper Privados ---
 
     /**
-     * Construye el token con los claims personalizados.
+     * Construye el token JWT final.
      */
-    private String buildToken(
-            Map<String, Object> extraClaims,
-            UserDetails userDetails,
-            long expiration
-    ) {
-        return Jwts
-                .builder()
-                .setClaims(extraClaims)
-                .setSubject(userDetails.getUsername())
-                .setIssuedAt(new Date(System.currentTimeMillis()))
-                .setExpiration(new Date(System.currentTimeMillis() + expiration))
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+    private String buildToken(Map<String, Object> extraClaims, UserDetails userDetails, long expiration) {
+        return Jwts.builder()
+                .claims(extraClaims)
+                .subject(userDetails.getUsername()) // Username (email)
+                .issuedAt(new Date(System.currentTimeMillis()))
+                .expiration(new Date(System.currentTimeMillis() + expiration))
+                .signWith(getSigningKey())
                 .compact();
     }
 
-    /**
-     * Verifica si el token ha expirado.
-     */
     private boolean isTokenExpired(String token) {
-        return getExpiration(token).before(new Date());
+        return extractExpiration(token).before(new Date());
+    }
+
+    private Date extractExpiration(String token) {
+        return extractClaim(token, Claims::getExpiration);
     }
 
     /**
-     * Obtiene la fecha de expiración del token.
+     * Método genérico para extraer cualquier "claim" (dato) del token.
      */
-    private Date getExpiration(String token) {
-        return getClaim(token, Claims::getExpiration);
-    }
-
-    /**
-     * Función genérica para extraer un 'claim' (dato) del token.
-     */
-    public <T> T getClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = getAllClaims(token);
+    private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
+        final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
     }
 
     /**
-     * Parsea el token y extrae todos los 'claims' usando la clave secreta.
+     * Parsea el token y extrae todos los claims usando la clave secreta.
      */
-    private Claims getAllClaims(String token) {
-        return Jwts
-                .parserBuilder()
-                .setSigningKey(getSigningKey())
+    private Claims extractAllClaims(String token) {
+        return Jwts.parser()
+                .verifyWith(getSigningKey())
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
     /**
-     * Prepara la clave secreta (Base64) para que la librería JJWT la use.
-     * Cumple con el Punto 1.5.5.
+     * Obtiene la clave de firma (SecretKey) a partir del string base64.
      */
-    private Key getSigningKey() {
-        byte[] keyBytes = Decoders.BASE64.decode(JWT_SECRET);
+    private SecretKey getSigningKey() {
+        byte[] keyBytes = Decoders.BASE64.decode(jwtSecret);
         return Keys.hmacShaKeyFor(keyBytes);
     }
 }

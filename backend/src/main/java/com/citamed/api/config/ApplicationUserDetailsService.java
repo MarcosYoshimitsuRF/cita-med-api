@@ -1,33 +1,26 @@
 package com.citamed.api.config;
 
 import com.citamed.api.domain.user.UsuarioRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 
 /**
- * Implementación de UserDetailsService (Punto 1.7.7).
- * Conecta Spring Security con nuestro UsuarioRepository para
- * cargar los detalles del usuario durante el login y la validación del token.
+ * Punto 1.7.7: Implementa UserDetailsService.
+ * Carga el usuario desde la BD usando el SP sp_ObtenerUsuarioPorEmail.
  */
 @Service
+@RequiredArgsConstructor
 public class ApplicationUserDetailsService implements UserDetailsService {
 
     private final UsuarioRepository usuarioRepository;
 
-    public ApplicationUserDetailsService(UsuarioRepository usuarioRepository) {
-        this.usuarioRepository = usuarioRepository;
-    }
-
-    /**
-     * Carga un usuario (en nuestro caso, por email) desde la BD.
-     * Utiliza el SP 'sp_ObtenerUsuarioPorEmail' a través del repositorio.
-     */
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // Usamos el método que llama a nuestro SP de login (Punto 1.4.2)
+        // 'username' es el email en nuestro sistema
         return usuarioRepository.findByEmailParaLogin(username)
-                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado o no activo: " + username));
+                .orElseThrow(() -> new UsernameNotFoundException("Usuario no encontrado o inactivo: " + username));
     }
 }
